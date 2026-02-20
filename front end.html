@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ClimateAlert Hub · emergency dashboard</title>
+    <!-- Tailwind + dark theme (cdn) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Leaflet (map) -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Chart.js (trends) -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <!-- Font Awesome icons (neon accents) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        /* custom emergency vibe & modal */
+        body { background: #0b0f17; font-family: 'Inter', system-ui, sans-serif; }
+        .neon-glow { box-shadow: 0 0 8px rgba(255, 70, 70, 0.6); }
+        .alert-scroll { max-height: 280px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #dc2626 #1f2937; }
+        .alert-scroll::-webkit-scrollbar { width: 6px; }
+        .alert-scroll::-webkit-scrollbar-track { background: #1f2937; }
+        .alert-scroll::-webkit-scrollbar-thumb { background: #dc2626; border-radius: 12px; }
+        .modal-backdrop { background: rgba(0,0,0,0.85); backdrop-filter: blur(3px); }
+        .card-hover { transition: all 0.2s ease; }
+        .card-hover:hover { transform: translateY(-2px); box-shadow: 0 10px 20px -10px rgba(239,68,68,0.4); }
+        .badge-severity-critical { background: #7f1d1d; color: #fecaca; border-left: 4px solid #ef4444; }
+        .badge-severity-high { background: #7f2d1d; color: #fed7aa; border-left: 4px solid #f97316; }
+        .badge-severity-moderate { background: #3b2e1d; color: #fde68a; border-left: 4px solid #eab308; }
+        .login-card { background: #111827; border: 1px solid #374151; }
+        .filter-select { background-color: #1f2937; border: 1px solid #374151; color: #f3f4f6; }
+        .loading-pulse { animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+    </style>
+</head>
+<body class="text-gray-200 antialiased">
+
+<!-- ========== LOGIN SECTION (visible first) ========== -->
+<div id="loginContainer" class="min-h-screen flex items-center justify-center p-4" style="background: #0b0f17;">
+    <div class="login-card rounded-2xl w-full max-w-md p-8 neon-glow">
+        <div class="text-center mb-8">
+            <i class="fas fa-exclamation-triangle text-5xl text-red-500 mb-3"></i>
+            <h2 class="text-3xl font-bold text-white">ClimateAlert Hub</h2>
+            <p class="text-gray-400 text-sm mt-1">emergency analytics · India desk</p>
+        </div>
+        <form id="loginForm">
+            <div class="mb-5">
+                <label class="block text-sm font-medium text-gray-300 mb-1"><i class="fas fa-user mr-2 text-red-400"></i>Username</label>
+                <input type="text" id="username" value="davanagere.admin" class="w-full p-3 rounded-lg bg-gray-800 border border-gray-700 text-white focus:ring-2 focus:ring-red-500 focus:border-transparent" placeholder="any credentials">
+            </div>
+            <div class="mb-6">
+                <label class="block text-sm font-medium text-gray-300 mb-1"><i class="fas fa-lock mr-2 text-red-400"></i>Password</label>
+                <input type="password" id="password" value="mock123" class="w-full p-3 rounded-lg bg-gray-800 border border-gray-700 text-white focus:ring-2 focus:ring-red-500" placeholder="••••••••">
+            </div>
+            <button type="submit" class="w-full bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-700 hover:to-orange-700 text-white font-bold py-3 rounded-lg transition-all duration-200 shadow-lg flex items-center justify-center gap-2"><i class="fas fa-sign-in-alt"></i> Access dashboard (mock)</button>
+        </form>
+        <p class="text-xs text-gray-500 text-center mt-6">offline mode · any login works</p>
+    </div>
+</div>
+
+<!-- ========== MAIN DASHBOARD (hidden initially) ========== -->
+<div id="dashboardContainer" class="hidden p-4 md:p-6 max-w-7xl mx-auto">
+    
+    <!-- Header with search & filters -->
+    <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 mb-6">
+        <div class="flex items-center gap-2">
+            <i class="fas fa-bolt text-2xl text-red-500"></i>
+            <h1 class="text-2xl md:text-3xl font-black tracking-tight"><span class="text-red-400">ClimateAlert</span>Hub</h1>
+            <span class="bg-red-900/50 text-red-300 text-xs px-2 py-1 rounded-full ml-2 border border-red-700">INDIA FOCUS</span>
+        </div>
+        <div class="flex flex-wrap gap-3 w-full md:w-auto">
+            <!-- search bar -->
+            <div class="relative flex-grow md:min-w-[240px]">
+                <i class="fas fa-search absolute left-3 top-3 text-gray-500 text-sm"></i>
+                <input type="text" id="globalSearch" placeholder="Search alerts, resources..." class="w-full bg-gray-800 border border-gray-700 rounded-lg py-2 pl-9 pr-4 text-sm text-white placeholder-gray-500 focus:ring-1 focus:ring-red-500">
+            </div>
+            <!-- filter selects -->
+            <select id="regionFilter" class="filter-select rounded-lg px-3 py-2 text-sm">
+                <option value="all">All regions</option>
+                <option value="india">India</option>
+                <option value="davanagere">Davanagere</option>
+                <option value="global">Global</option>
+            </select>
+            <select id="disasterFilter" class="filter-select rounded-lg px-3 py-2 text-sm">
+                <option value="all">All types</option>
+                <option value="flood">Flood</option>
+                <option value="fire">Fire</option>
+                <option value="earthquake">Earthquake</option>
+                <option value="cyclone">Cyclone</option>
+            </select>
+            <!-- logout button (returns to login) -->
+            <button id="logoutBtn" class="bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 px-4 py-2 rounded-lg text-sm flex items-center gap-1"><i class="fas fa-sign-out-alt"></i><span class="hidden sm:inline">Logout</span></button>
+        </div>
+    </div>
+
+    <!-- metrics cards (CO2, temp anomaly, sea rise) -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+        <div class="bg-gray-800/80 p-5 rounded-xl border-l-4 border-cyan-500 card-hover">
+            <div class="flex justify-between items-start">
+                <div><p class="text-gray-400 text-sm">CO₂ level (ppm)</p><p class="text-3xl font-bold text-cyan-300" id="co2Val">421.3</p></div>
+                <i class="fas fa-wind text-3xl text-cyan-700"></i>
+            </div>
+            <p class="text-xs text-green-400 mt-2"><i class="fas fa-arrow-up"></i> +2.1 vs last month</p>
+        </div>
+        <div class="bg-gray-800/80 p-5 rounded-xl border-l-4 border-yellow-500 card-hover">
+            <div class="flex justify-between items-start">
+                <div><p class="text-gray-400 text-sm">Temp anomaly (°C)</p><p class="text-3xl font-bold text-yellow-300" id="tempAnomaly">1.48</p></div>
+                <i class="fas fa-temperature-high text-3xl text-yellow-700"></i>
+            </div>
+            <p class="text-xs text-red-400 mt-2">⬆ +0.3°C above 30y avg</p>
+        </div>
+        <div class="bg-gray-800/80 p-5 rounded-xl border-l-4 border-blue-500 card-hover">
+            <div class="flex justify-between items-start">
+                <div><p class="text-gray-400 text-sm">Sea rise (mm/yr)</p><p class="text-3xl font-bold text-blue-300" id="seaRise">3.9</p></div>
+                <i class="fas fa-water text-3xl text-blue-700"></i>
+            </div>
+            <p class="text-xs text-blue-300 mt-2">⏫ accelerating (IPCC AR6)</p>
+        </div>
+    </div>
+
+    <!-- Map + Alert feed row -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-6">
+        <!-- Leaflet map (2/3 on large) -->
+        <div id="mapContainer" class="lg:col-span-2 bg-gray-900 rounded-xl overflow-hidden border border-gray-800 h-[300px] md:h-[340px] relative">
+            <div id="map" class="h-full w-full z-0"></div>
+            <div class="absolute bottom-2 left-2 bg-black/70 text-xs px-2 py-1 rounded border border-red-900 z-10">🔥 Flood/fire risk overlay (mock)</div>
+        </div>
+        <!-- Alert feed (1/3) -->
+        <div class="bg-gray-900/90 rounded-xl border border-gray-800 p-4 flex flex-col">
+            <div class="flex items-center justify-between mb-3"><h3 class="font-semibold text-lg flex items-center gap-2"><i class="fas fa-bell text-red-500 text-sm"></i> LIVE ALERT FEED</h3><span class="bg-red-900/40 text-red-400 text-xs px-2 py-1 rounded-full">mock streaming</span></div>
+            <div id="alertFeed" class="alert-scroll space-y-2 pr-1">
+                <!-- dynamically populated by js -->
+                <div class="text-center text-gray-500 py-4"><i class="fas fa-spinner fa-spin"></i> loading alerts...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Trend visualizer (Chart.js) + Resource hub row -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-6">
+        <!-- chart block (2/3) -->
+        <div class="lg:col-span-2 bg-gray-900/90 p-4 rounded-xl border border-gray-800">
+            <div class="flex items-center justify-between mb-2">
+                <h3 class="font-semibold"><i class="fas fa-chart-line text-red-400 mr-2"></i>30‑day CO₂ / temp trend + forecast (mock ML)</h3>
+                <span class="text-xs bg-fuchsia-900/40 text-fuchsia-300 px-2 py-1 rounded-full">prophet model</span>
+            </div>
+            <canvas id="trendChart" width="400" height="180" class="w-full h-auto max-h-52"></canvas>
+        </div>
+        <!-- resource hub teaser (1/3) but we will expand to full width below actually, but keep as quick access -->
+        <div class="bg-gray-900/90 rounded-xl border border-gray-800 p-4 flex flex-col">
+            <h3 class="font-semibold flex items-center gap-2 mb-2"><i class="fas fa-book-open text-amber-400"></i> RESOURCE HUB (India)</h3>
+            <p class="text-xs text-gray-400 mb-3"><i class="fas fa-database mr-1"></i>NGOs, plans, tools – searchable</p>
+            <button id="openResourceModalBtn" class="bg-red-950/60 hover:bg-red-900/80 text-red-300 border border-red-800 rounded-lg py-2 text-sm transition flex items-center justify-center gap-1"><i class="fas fa-table"></i> open full directory</button>
+        </div>
+    </div>
+
+    <!-- RESOURCE HUB full table (hidden until button click, but we show as expandable section) -->
+    <div id="resourceTableContainer" class="bg-gray-900/90 rounded-xl border border-gray-800 p-4 hidden transition-all duration-300">
+        <div class="flex items-center justify-between mb-3">
+            <h3 class="font-semibold text-lg flex items-center gap-2"><i class="fas fa-folder-tree text-emerald-500"></i> Resource directory · filterable (Davanagere/India focus)</h3>
+            <input type="text" id="resourceSearch" placeholder="search table..." class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm w-56 text-white">
+        </div>
+        <div class="overflow-x-auto">
+            <table class="min-w-full text-sm">
+                <thead class="bg-gray-800 text-gray-300 text-xs">
+                    <tr><th class="px-3 py-2 text-left">Name</th><th class="px-3 py-2 text-left">Type</th><th class="px-3 py-2 text-left">Region</th><th class="px-3 py-2 text-left">Contact/notes</th></tr>
+                </thead>
+                <tbody id="resourceTableBody" class="divide-y divide-gray-800">
+                    <!-- dynamic rows -->
+                </tbody>
+            </table>
+        </div>
+        <p class="text-xs text-gray-500 mt-3"><i class="fas fa-info-circle"></i> offline mock data · evacuation plans & NGOs</p>
+    </div>
+
+    <!-- loading overlay sample (hidden by default, for demo) -->
+    <div id="loadingStateDemo" class="fixed bottom-4 right-4 bg-black/70 border border-red-800 rounded-full px-4 py-2 text-xs hidden"><i class="fas fa-spinner fa-spin mr-2"></i>syncing mock api...</div>
+</div>
+
+<!-- IMPACT REPORT MODAL (hidden) -->
+<div id="impactModal" class="fixed inset-0 flex items-center justify-center z-50 modal-backdrop hidden">
+    <div class="bg-gray-900 border border-red-800 rounded-xl max-w-md w-full mx-4 p-6 shadow-2xl">
+        <div class="flex items-center justify-between mb-4"><h3 class="text-xl font-bold text-red-400"><i class="fas fa-file-alt mr-2"></i>Impact report</h3><button id="closeModalBtn" class="text-gray-500 hover:text-white"><i class="fas fa-times"></i></button></div>
+        <div id="modalContent" class="text-sm text-gray-300 space-y-3">
+            <!-- dynamic from alert -->
+        </div>
+        <div class="mt-6 flex justify-end"><button id="closeModalFooterBtn" class="bg-red-800 hover:bg-red-700 px-4 py-2 rounded-lg text-sm">close</button></div>
+    </div>
+</div>
+
+<script>
+    (function() {
+        // ---------- MOCK DATA ----------
+        const alerts = [
+            { id: 1, title: "Severe flood warning - Davanagere", severity: "critical", type: "flood", region: "davanagere", time: "2 min ago", description: "Tungabhadra river rising. Immediate evacuation of low-lying areas. 15 villages at risk.", impact: "Over 3,500 people affected, 2 relief camps opened. Road connectivity cut." },
+            { id: 2, title: "Cyclone BOB 07 - Odisha coast", severity: "high", type: "cyclone", region: "india", time: "15 min ago", description: "Cyclone alert for Puri and nearby districts. Wind speed 110 km/h expected.", impact: "Fishermen advised not to venture. NDRF teams deployed." },
+            { id: 3, title: "Forest fire - Western Ghats (Karnataka)", severity: "high", type: "fire", region: "india", time: "1 hour ago", description: "Active fires in Chikkamagaluru forest range, dry conditions.", impact: "Two fire tenders, 40 personnel working. IAF helicopters on standby." },
+            { id: 4, title: "Moderate earthquake - Andaman", severity: "moderate", type: "earthquake", region: "india", time: "3 hours ago", description: "Magnitude 4.8, no tsunami threat.", impact: "Minor tremors felt in Port Blair. No damage reported." },
+            { id: 5, title: "Drought distress - Davanagere rural", severity: "moderate", type: "drought", region: "davanagere", time: "1 day ago", description: "Below average rainfall, kharif sowing down by 30%.", impact: "Drinking water scarcity in 30 villages. Tankers deployed." },
+        ];
+
+        const resources = [
+            { name: "NDRF - National Disaster Response Force", type: "gov agency", region: "india", contact: "ndrf.gov.in / 011-24363260" },
+            { name: "Davanagere District Emergency Control", type: "evacuation plan", region: "davanagere", contact: "davanagere.nic.in/disaster" },
+            { name: "Goonj (NGO) - relief & rehabilitation", type: "NGO", region: "india", contact: "goonj.org / 24x7 helpline" },
+            { name: "CGWB - groundwater monitoring", type: "tool", region: "india", contact: "cgwb.gov.in/ drought bulletins" },
+            { name: "Davanagere flood safe zones map", type: "evacuation plan", region: "davanagere", contact: "pdf available (mock)" },
+            { name: "SEEDS India - climate resilience", type: "NGO", region: "india", contact: "seedsindia.org" },
+            { name: "Bhuvan - ISRO fire alerts", type: "tool", region: "india", contact: "bhuvan.nrsc.gov.in" },
+        ];
+
+        // ----- state -----
+        let currentAlert = null;
+        let trendChart = null;
+        let map = null;
+
+        // login & UI switching
+        const loginContainer = document.getElementById('loginContainer');
+        const dashboardContainer = document.getElementById('dashboardContainer');
+        const loginForm = document.getElementById('loginForm');
+        const logoutBtn = document.getElementById('logoutBtn');
+
+        loginForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            // any credentials accepted (mock)
+            loginContainer.classList.add('hidden');
+            dashboardContainer.classList.remove('hidden');
+            initDashboard(); // load map, charts, data
+        });
+
+        logoutBtn.addEventListener('click', () => {
+            dashboardContainer.classList.add('hidden');
+            loginContainer.classList.remove('hidden');
+            // optional cleanup
+        });
+
+        // ----- dashboard initialization (only once) -----
+        function initDashboard() {
+            if (map) return; // already initialized
+
+            // metrics (static mock)
+            document.getElementById('co2Val').innerText = (421 + Math.random()*2).toFixed(1);
+            document.getElementById('tempAnomaly').innerText = (1.4 + Math.random()*0.2).toFixed(2);
+            document.getElementById('seaRise').innerText = (3.8 + Math.random()*0.3).toFixed(1);
+
+            // render alert feed
+            renderAlerts(alerts);
+            // render resources table (initially hidden)
+            renderResources(resources);
+            // init map
+            initMap();
+            // init chart
+            initChart();
+            // attach event listeners for filters & search
+            attachFilterListeners();
+
+            // resource hub expand button
+            document.getElementById('openResourceModalBtn').addEventListener('click', ()=>{
+                const container = document.getElementById('resourceTableContainer');
+                container.classList.toggle('hidden');
+            });
+
+            // modal close
+            const closeModal = () => document.getElementById('impactModal').classList.add('hidden');
+            document.getElementById('closeModalBtn').addEventListener('click', closeModal);
+            document.getElementById('closeModalFooterBtn').addEventListener('click', closeModal);
+            // click backdrop close
+            document.getElementById('impactModal').addEventListener('click', (e) => { if(e.target === document.getElementById('impactModal')) closeModal(); });
+
+            // loading state simulation (just show for 1s then hide)
+            const loadDiv = document.getElementById('loadingStateDemo');
+            loadDiv.classList.remove('hidden');
+            setTimeout(()=> loadDiv.classList.add('hidden'), 1200);
+        }
+
+        function renderAlerts(alertArray) {
+            const feed = document.getElementById('alertFeed');
+            if (!alertArray.length) { feed.innerHTML = '<div class="text-gray-500 text-center py-4">No alerts</div>'; return; }
+            feed.innerHTML = alertArray.map(a => {
+                let severityClass = 'badge-severity-critical';
+                if (a.severity === 'high') severityClass = 'badge-severity-high';
+                else if (a.severity === 'moderate') severityClass = 'badge-severity-moderate';
+                return `
+                <div class="p-3 rounded-lg ${severityClass} cursor-pointer hover:brightness-125 transition-all border border-gray-700 alert-item" data-id="${a.id}">
+                    <div class="flex justify-between items-start"><span class="font-medium text-sm">${a.title}</span><span class="text-xs bg-black/30 px-2 py-0.5 rounded-full">${a.time}</span></div>
+                    <p class="text-xs opacity-90 mt-1">${a.description.substring(0,50)}…</p>
+                    <button class="text-red-300 text-xs mt-1 flex items-center gap-1 view-report" data-id="${a.id}"><i class="fas fa-external-link-alt"></i> impact report</button>
+                </div>`;
+            }).join('');
+
+            // attach event listeners to each "impact report" button
+            document.querySelectorAll('.view-report').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const id = parseInt(btn.dataset.id);
+                    const alert = alerts.find(a => a.id === id);
+                    if (alert) showImpactModal(alert);
+                });
+            });
+        }
+
+        function showImpactModal(alert) {
+            document.getElementById('modalContent').innerHTML = `
+                <p><span class="text-red-400 font-medium">${alert.title}</span> (${alert.severity})</p>
+                <p class="border-l-2 border-red-700 pl-3 italic">${alert.description}</p>
+                <p><i class="fas fa-users mr-1 text-red-400"></i> ${alert.impact}</p>
+                <p class="text-xs text-gray-400">timeline: ${alert.time} · region: ${alert.region}</p>
+            `;
+            document.getElementById('impactModal').classList.remove('hidden');
+        }
+
+        function renderResources(resArray) {
+            const tbody = document.getElementById('resourceTableBody');
+            tbody.innerHTML = resArray.map(r => `<tr class="hover:bg-gray-800/50"><td class="px-3 py-2 font-medium">${r.name}</td><td class="px-3 py-2">${r.type}</td><td class="px-3 py-2">${r.region}</td><td class="px-3 py-2 text-gray-400">${r.contact}</td></tr>`).join('');
+        }
+
+        function initMap() {
+            map = L.map('map').setView([20.5937, 78.9629], 5); // India
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '&copy; OpenStreetMap, CartoDB' }).addTo(map);
+
+            // mock risk overlays (Davanagere focus)
+            const dvg = [14.4663, 75.9242];
+            L.circleMarker(dvg, { radius: 18, color: '#ff4444', weight: 2, fillColor: '#ff2222', fillOpacity: 0.4 })
+                .addTo(map).bindPopup('<b>🔥🔥 DAVANAGERE high flood/fire risk</b><br>Mock emergency overlay').openPopup();
+
+            L.circleMarker([21.1458, 79.0882], { radius: 25, color: '#ffaa00', fillColor: '#ff8800', fillOpacity: 0.3 })
+                .addTo(map).bindPopup('Flood prone (mock) central India');
+            
+            L.circleMarker([26.9124, 75.7873], { radius: 20, color: '#ff8800', fillColor: '#ff6600', fillOpacity: 0.3 })
+                .addTo(map).bindPopup('Earthquake risk zone (mock)');
+
+            L.polygon([[13.5, 75.5], [14.2, 76.0], [14.0, 76.8], [13.2, 76.2]], { color: '#ff4444', fillColor: '#f00', fillOpacity: 0.15 })
+                .addTo(map).bindPopup('Davanagere district: flood overlay (mock)');
+
+            // add legend
+            L.control({position: 'bottomright'}).onAdd = function() {
+                let div = L.DomUtil.create('div', 'bg-black/70 text-white p-2 rounded text-xs border border-red-800');
+                div.innerHTML = '<span class="text-red-500">⬤</span> critical risk <br><span class="text-orange-500">⬤</span> high';
+                return div;
+            };
+        }
+
+        function initChart() {
+            const ctx = document.getElementById('trendChart').getContext('2d');
+            trendChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: Array.from({length:30}, (_,i)=> `d${i+1}`),
+                    datasets: [
+                        { label: 'CO₂ (ppm)', data: Array.from({length:30}, ()=> 415 + Math.random()*10), borderColor: '#4ade80', backgroundColor: 'transparent', tension: 0.3 },
+                        { label: 'Temp anomaly °C', data: Array.from({length:30}, ()=> 1.3 + Math.random()*0.4), borderColor: '#f97316', backgroundColor: 'transparent', tension: 0.3, yAxisID: 'y1' },
+                        { label: 'Forecast (ML) next 7d', data: [423,425,426,428,429,430,432], borderColor: '#f87171', borderDash: [5,5], pointRadius: 0, fill: false }
+                    ]
+                },
+                options: { responsive: true, maintainAspectRatio: true, scales: { y: { beginAtZero: false, grid: { color: '#333' } } },
+                plugins: { legend: { labels: { color: '#ccc' } } } }
+            });
+        }
+
+        function attachFilterListeners() {
+            const searchInput = document.getElementById('globalSearch');
+            const regionFilter = document.getElementById('regionFilter');
+            const disasterFilter = document.getElementById('disasterFilter');
+            const resourceSearch = document.getElementById('resourceSearch');
+
+            function filterAlertsAndResources() {
+                const searchTerm = searchInput.value.toLowerCase();
+                const region = regionFilter.value;
+                const disaster = disasterFilter.value;
+
+                const filteredAlerts = alerts.filter(a => {
+                    if (region !== 'all' && a.region !== region) return false;
+                    if (disaster !== 'all' && a.type !== disaster) return false;
+                    if (searchTerm && !a.title.toLowerCase().includes(searchTerm) && !a.description.toLowerCase().includes(searchTerm)) return false;
+                    return true;
+                });
+                renderAlerts(filteredAlerts);
+
+                // filter resources (global search + region)
+                const resTerm = resourceSearch.value.toLowerCase();
+                const filteredRes = resources.filter(r => {
+                    if (region !== 'all' && r.region !== region) return false;
+                    if (searchTerm && !r.name.toLowerCase().includes(searchTerm) && !r.type.toLowerCase().includes(searchTerm)) return false;
+                    if (resTerm && !r.name.toLowerCase().includes(resTerm) && !r.region.toLowerCase().includes(resTerm)) return false;
+                    return true;
+                });
+                renderResources(filteredRes);
+            }
+
+            searchInput.addEventListener('input', filterAlertsAndResources);
+            regionFilter.addEventListener('change', filterAlertsAndResources);
+            disasterFilter.addEventListener('change', filterAlertsAndResources);
+            resourceSearch.addEventListener('input', filterAlertsAndResources);
+        }
+
+        // Also run filter once on dashboard init to fill table
+        window.renderResources = renderResources; // used by filter
+    })();
+</script>
+<!-- dummy note for netlify: one-click deploy ready (static) -->
+<!-- deploy button concept: drag & drop to netlify -->
+</body>
+</html>

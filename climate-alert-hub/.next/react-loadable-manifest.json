@@ -1,0 +1,15 @@
+{
+  "app\\page.tsx -> @/components/RiskMap": {
+    "id": "app\\page.tsx -> @/components/RiskMap",
+    "files": [
+      "static/css/_app-pages-browser_src_components_RiskMap_tsx.css",
+      "static/chunks/_app-pages-browser_src_components_RiskMap_tsx.js"
+    ]
+  },
+  "app\\page.tsx -> @/components/TrendChart": {
+    "id": "app\\page.tsx -> @/components/TrendChart",
+    "files": [
+      "static/chunks/_app-pages-browser_src_components_TrendChart_tsx.js"
+    ]
+  }
+}
