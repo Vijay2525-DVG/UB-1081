@@ -1,5 +1,5 @@
 # ClimateAlert Hub
-
+# ClimateAlert Hub
 Local setup & run instructions for the ClimateAlert Hub (frontend + backend).
 
 This repository contains two main apps:
